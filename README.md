@@ -36,6 +36,8 @@ Internet ──https──▶ Cloudflare edge ──tunnel──▶ tty-tunnel �
 
 ## One-liner
 
+<img width="1250" height="1259" alt="image" src="https://github.com/user-attachments/assets/3b623a95-e2a5-4956-9945-d6ce5acbd8b9" />
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh
 ```
