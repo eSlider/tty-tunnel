@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/eSlider/tty-tunnel/compare/v1.1.0...v1.2.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** bootstrap the container runtime on a fresh machine ([8efe62b](https://github.com/eSlider/tty-tunnel/commit/8efe62b243de7d1306c5e483637add25e6186634))
+
 ## [1.1.0](https://github.com/eSlider/tty-tunnel/compare/v1.0.0...v1.1.0) (2026-09-20)
 
 
