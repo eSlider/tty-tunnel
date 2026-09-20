@@ -3,6 +3,7 @@
 #   docker build --build-arg OPENCODE_IMAGE=ghcr.io/anomalyco/opencode:2.1.0
 ARG OPENCODE_IMAGE=ghcr.io/anomalyco/opencode:2.0.6
 
+# hadolint ignore=DL3006
 FROM ${OPENCODE_IMAGE}
 
 LABEL org.opencontainers.image.title="tty-tunnel-opencode" \
