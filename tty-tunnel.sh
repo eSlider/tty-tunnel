@@ -165,23 +165,40 @@ print_table() {
   [ -n "$url" ] || return 0
 
   body="$(printf '{"username":"%s","password":"%s"}' "$admin_user" "$admin_pass")"
-  root_code="$(curl_code -L "$url/")"
+
+  # A brand-new quick-tunnel hostname can take a few seconds to resolve.
+  printf '  checking reachability…\n' >&2
+  root_code=""
+  i=0
+  while [ "$i" -lt 15 ]; do
+    root_code="$(curl_code -L "$url/")"
+    case "$root_code" in
+      2* | 3*) break ;;
+    esac
+    i=$((i + 1))
+    sleep 3
+  done
+
   login_code="$(curl_code -X POST "$url/users/login" -H 'Content-Type: application/json' -d "$body")"
   reg="$(curl -sS --doh-url https://1.1.1.1/dns-query "$url/users/registration-allowed" 2>/dev/null | sed -n 's/.*"allowed":\([a-z]*\).*/\1/p')"
 
   case "$reg" in
     false) reg="closed" ;;
-    true) reg="OPEN (run make up to finish initialising)" ;;
+    true) reg="OPEN (run the stack once more to finish initialising)" ;;
     *) reg="unknown" ;;
   esac
 
   printf '  checks\n'
   printf '  %s\n' '──────────────────────────────────────────────────────────────'
-  printf '  %-26s %s\n' 'GET  /' "${root_code:-unreachable}"
-  printf '  %-26s %s\n' 'POST /users/login' "${login_code:-unreachable}"
+  printf '  %-26s %s\n' 'GET  /' "${root_code:-000}"
+  printf '  %-26s %s\n' 'POST /users/login' "${login_code:-000}"
   printf '  %-26s %s\n' 'registration' "$reg"
   printf '  %s\n' '──────────────────────────────────────────────────────────────'
   printf '\n'
+  if [ "$root_code" = "000" ]; then
+    printf '  note: the tunnel URL is not resolvable yet — retry in a few seconds,\n'
+    printf '        or flush the DNS cache (resolvectl flush-caches).\n\n'
+  fi
   printf '  logs: %s logs -f   ·   stop: %s down\n' "$DC" "$DC"
   printf '\n'
 }
