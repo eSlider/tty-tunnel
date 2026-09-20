@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -28,6 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # A tag created by the action uses GITHUB_TOKEN, and such events do not
+      # start other workflows. Dispatch ci.yml explicitly on the new tag so the
+      # versioned images (X.Y.Z, X.Y, X, latest) are actually published.
+      - name: Publish the release image
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run ci.yml -R "${{ github.repository }}" --ref "${{ steps.release.outputs.tag_name }}"
+          echo "dispatched ci.yml for ${{ steps.release.outputs.tag_name }}"

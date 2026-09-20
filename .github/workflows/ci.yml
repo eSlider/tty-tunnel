@@ -5,6 +5,9 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Also dispatched by release-please after it creates a version tag, because
+  # tags created with the default GITHUB_TOKEN do not trigger `push` workflows.
+  workflow_dispatch:
 
 permissions:
   contents: read

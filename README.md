@@ -249,8 +249,10 @@ The token flow above is simpler for most people.
   `feat:` → minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major.
   It opens a *Release PR* that bumps `version.txt`,
   `.release-please-manifest.json` and `CHANGELOG.md`; merging it tags
-  `vX.Y.Z` and creates the GitHub Release, which triggers the versioned image
-  build above.
+  `vX.Y.Z` and creates the GitHub Release, then dispatches `ci.yml` on the new
+  tag to publish the versioned images. (That dispatch is needed because tags
+  created with the default `GITHUB_TOKEN` do not trigger workflows by themselves.)
+  A manual `git push` of a tag triggers the same build directly.
 - **`smoke.yml`** – starts the real stack, waits for the Cloudflare URL, then
   reaches Termix and logs in **through the public URL**. It is marked
   `continue-on-error` because TryCloudflare rate-limits CI IPs.
