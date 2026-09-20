@@ -1,5 +1,9 @@
 # tty-tunnel
 
+[![ci](https://github.com/eSlider/tty-tunnel/actions/workflows/ci.yml/badge.svg)](https://github.com/eSlider/tty-tunnel/actions/workflows/ci.yml)
+[![smoke](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml/badge.svg)](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml)
+[![ghcr](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel)
+
 Run [Termix](https://github.com/Termix-SSH/Termix) (a self-hosted web SSH
 client) behind a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
 inside Docker, with one command.
