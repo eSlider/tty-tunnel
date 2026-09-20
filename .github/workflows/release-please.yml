@@ -1,0 +1,33 @@
+name: release-please
+
+# Automatic semantic versioning from Conventional Commits.
+#
+#   feat: ...            -> minor bump
+#   fix: ...             -> patch bump
+#   feat!: ... / BREAKING CHANGE: -> major bump
+#   chore:/ci:/docs: ... -> no release (unless a ! is present)
+#
+# It opens (or updates) a "Release PR" that bumps version.txt, the manifest and
+# CHANGELOG.md. Merging that PR creates the vX.Y.Z tag and the GitHub Release,
+# which in turn makes ci.yml publish the versioned images.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

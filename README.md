@@ -178,9 +178,21 @@ The token flow above is simpler for most people.
 `.github/workflows/`:
 
 - **`ci.yml`** – shellcheck + hadolint, then builds and pushes a multi-arch
-  (`linux/amd64`, `linux/arm64`) image to
-  `ghcr.io/eslider/tty-tunnel` on every push to `main`, with semver tags on
-  `v*` tags. Pull requests build but do not push. Provenance and SBOM included.
+  (`linux/amd64`, `linux/arm64`) image to `ghcr.io/eslider/tty-tunnel`. Pull
+  requests build but never push. Provenance and SBOM included. Image tags:
+
+  | Ref | Tags |
+  |---|---|
+  | push to `main` | `edge`, `main`, `sha-<commit>` |
+  | tag `vX.Y.Z` | `X.Y.Z`, `X.Y`, `X`, `latest`, `sha-<commit>` |
+
+- **`release-please.yml`** – automatic [semantic versioning](https://github.com/googleapis/release-please)
+  driven by [Conventional Commits](https://www.conventionalcommits.org/):
+  `feat:` → minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major.
+  It opens a *Release PR* that bumps `version.txt`,
+  `.release-please-manifest.json` and `CHANGELOG.md`; merging it tags
+  `vX.Y.Z` and creates the GitHub Release, which triggers the versioned image
+  build above.
 - **`smoke.yml`** – starts the real stack, waits for the Cloudflare URL, then
   reaches Termix and logs in **through the public URL**. It is marked
   `continue-on-error` because TryCloudflare rate-limits CI IPs.
@@ -190,6 +202,31 @@ The token flow above is simpler for most people.
 > smoke test falls back to resolving over Cloudflare DoH for that reason. If a
 > fresh URL does not open for you, retry after a few seconds or flush the cache
 > with `resolvectl flush-caches`.
+
+### Cutting a release
+
+Normally you do nothing: merge Conventional Commits to `main`, then merge the
+Release PR that `release-please` opens.
+
+To release manually:
+
+```bash
+make release VERSION=1.2.3      # or: scripts/release.sh 1.2.3
+```
+
+That updates `version.txt` + the manifest, commits, tags `v1.2.3`, pushes and
+creates the GitHub Release; CI then publishes the image tags.
+
+### Using a version
+
+```bash
+docker run --rm --add-host host.docker.internal:host-gateway \
+  -e PORT=3000 -v "$PWD/var/host:/var/host" \
+  ghcr.io/eslider/tty-tunnel:1.2.3     # pin
+  # ghcr.io/eslider/tty-tunnel:1       # track the 1.x line
+  # ghcr.io/eslider/tty-tunnel:latest  # newest release
+  # ghcr.io/eslider/tty-tunnel:edge    # every push to main
+```
 
 The Termix image itself is upstream (`ghcr.io/lukegus/termix`); this repo only
 builds the tunnel wrapper and the bootstrap helper.

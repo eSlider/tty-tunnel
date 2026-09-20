@@ -4,7 +4,7 @@ ENV_FILE := .env
 IMAGE ?= ghcr.io/eslider/tty-tunnel:latest
 
 .DEFAULT_GOAL := help
-.PHONY: help env build up wait-url down logs url pass login shell config clean reset
+.PHONY: help env build release up wait-url down logs url pass login shell config clean reset
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -20,6 +20,10 @@ env: ## create .env from .env.example with your ids (skipped if it exists)
 
 build: ## build the tunnel image locally
 	docker build -t $(IMAGE) .
+
+release: ## tag and publish a release: make release VERSION=1.2.3
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=1.2.3"; exit 1; }
+	scripts/release.sh "$(VERSION)"
 
 up: env ## start the stack, wait for the public URL, print credentials
 	$(COMPOSE) up -d --build
