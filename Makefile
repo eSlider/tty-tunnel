@@ -4,7 +4,7 @@ ENV_FILE := .env
 IMAGE ?= ghcr.io/eslider/tty-tunnel:latest
 
 .DEFAULT_GOAL := help
-.PHONY: help env build release up wait-url down logs url pass login shell config clean reset
+.PHONY: help env build release up opencode wait-url down logs url pass login shell config clean reset
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -27,6 +27,11 @@ release: ## tag and publish a release: make release VERSION=1.2.3
 
 up: env ## start the stack, wait for the public URL, print credentials
 	$(COMPOSE) up -d --build
+	@$(MAKE) --no-print-directory wait-url
+	@$(MAKE) --no-print-directory pass
+
+opencode: env ## start the stack plus the isolated OpenCode container and Termix tab
+	OPENCODE_ENABLED=1 $(COMPOSE) --profile opencode up -d --build
 	@$(MAKE) --no-print-directory wait-url
 	@$(MAKE) --no-print-directory pass
 
@@ -68,7 +73,7 @@ clean: ## stop the stack and drop the tunnel URL/logs
 
 reset: ## DESTRUCTIVE: remove all data, credentials and generated keys
 	$(COMPOSE) down -v
-	rm -rf var/termix var/ssh var/host-ssh
+	rm -rf var/termix var/ssh var/host-ssh var/opencode
 	rm -f var/host/url.txt var/host/hostname.txt var/host/cloudflared.log
 	rm -f etc/config.yml .env
 	@echo "==> reset complete"

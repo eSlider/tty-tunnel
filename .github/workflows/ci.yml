@@ -84,3 +84,30 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - id: meta-opencode
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-opencode
+          tags: |
+            type=ref,event=branch
+            type=sha,format=long
+            type=raw,value=edge,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push the opencode image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./opencode
+          file: ./opencode/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-opencode.outputs.tags }}
+          labels: ${{ steps.meta-opencode.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

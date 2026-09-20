@@ -96,3 +96,63 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  opencode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate a test SSH key
+        run: |
+          mkdir -p var/ssh
+          ssh-keygen -q -t ed25519 -N '' -C "tty-tunnel ci test key" -f var/ssh/id_ed25519
+
+      - name: Build the opencode image
+        run: docker build -t tty-tunnel-opencode:ci ./opencode
+
+      - name: Start the container
+        run: |
+          docker network create ttt-ci
+          docker run -d --name ttt-opencode --network ttt-ci \
+            -e OPENCODE_SSH_PASSWORD=ci-password \
+            -v "$PWD/var/ssh:/keys:ro" \
+            tty-tunnel-opencode:ci
+
+      - name: OpenCode is installed
+        run: |
+          docker exec ttt-opencode opencode --version
+          docker exec ttt-opencode sh -c 'command -v fzf rg bat eza tmux git jq'
+
+      - name: Key auth, exec and SFTP work
+        run: |
+          docker run --rm --network ttt-ci -v "$PWD/var/ssh:/keys:ro" alpine sh -ec '
+            apk add --no-cache openssh-client >/dev/null
+            ssh -i /keys/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o BatchMode=yes opencode@ttt-opencode "echo SSH_OK; opencode --version" | tee /tmp/out
+            grep -q SSH_OK /tmp/out
+            printf "ls /workspace\n" > /tmp/batch
+            sftp -i /keys/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -b /tmp/batch opencode@ttt-opencode
+          '
+
+      - name: Interactive session lands in the OpenCode TUI
+        run: |
+          timeout 20 docker run --rm --network ttt-ci -v "$PWD/var/ssh:/keys:ro" alpine sh -c '
+            apk add --no-cache openssh-client >/dev/null
+            timeout 15 ssh -tt -i /keys/id_ed25519 -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR opencode@ttt-opencode >/dev/null 2>&1 || true
+          ' || true
+          docker exec ttt-opencode su-exec opencode tmux list-panes -a -F "#{pane_current_command} #{pane_current_path}" | tee /tmp/panes
+          grep -q "opencode /workspace" /tmp/panes
+
+      - name: Logs on failure
+        if: failure()
+        run: docker logs ttt-opencode
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f ttt-opencode || true
+          docker network rm ttt-ci || true

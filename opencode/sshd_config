@@ -1,0 +1,30 @@
+# sshd configuration for the isolated OpenCode container.
+# Only the unprivileged `opencode` user may log in. Its login shell is
+# /usr/local/bin/opencode-shell, so interactive sessions land in the OpenCode
+# TUI inside tmux, while exec requests and SFTP behave normally.
+
+Port 22
+AddressFamily any
+ListenAddress 0.0.0.0
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+
+AllowUsers opencode
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+AllowTcpForwarding yes
+
+Subsystem sftp internal-sftp
+
+PrintMotd no
+ClientAliveInterval 30
+ClientAliveCountMax 6
+LogLevel INFO

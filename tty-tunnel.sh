@@ -44,6 +44,7 @@ tty-tunnel — run Termix behind a Cloudflare Tunnel.
 
 Commands:
   up       build, start the stack, wait for the public URL, print the table  (default)
+  opencode same, plus the isolated OpenCode container and its Termix tab
   pass     print just the access table (URL, credentials, SSH preset)
   url      print the current public URL
   logs     follow the logs
@@ -56,6 +57,8 @@ Run with no checkout to install into $TTT_HOME (~/.tty-tunnel, or set TTT_HOME):
 Missing Docker is installed automatically on Debian/Ubuntu (official apt repo,
 needs sudo). TTT_INSTALL=no never installs anything, TTT_INSTALL=yes skips the
 prompt. Podman is used automatically when it is present and Docker is not.
+The `opencode` command also starts the isolated OpenCode container and seeds a
+Termix workspace with an opencode terminal tab.
 Env: TTT_HOME, TTT_WAIT (URL timeout, default 180), TTT_FORCE=1 (skip reset prompt).
 EOF
 }
@@ -217,20 +220,72 @@ cd "$ROOT"
 
 # --------------------------------------------------------------- helpers ----
 ensure_env() {
-  [ -f .env ] && return 0
-  [ -f .env.example ] || return 0
-  sed -e "s|^PUID=.*|PUID=$(id -u)|" \
-      -e "s|^PGID=.*|PGID=$(id -g)|" \
-      -e "s|^SSH_USER=.*|SSH_USER=${USER:-root}|" \
-      -e "s|^HOST_SSH_DIR=.*|HOST_SSH_DIR=${HOME}/.ssh|" \
-      .env.example >.env
-  log "created .env"
+  if [ ! -f .env ]; then
+    [ -f .env.example ] || return 0
+    sed -e "s|^PUID=.*|PUID=$(id -u)|" \
+        -e "s|^PGID=.*|PGID=$(id -g)|" \
+        -e "s|^SSH_USER=.*|SSH_USER=${USER:-root}|" \
+        -e "s|^HOST_SSH_DIR=.*|HOST_SSH_DIR=${HOME}/.ssh|" \
+        .env.example >.env
+    log "created .env"
+  fi
+}
+
+env_get() {
+  sed -n "s/^$1=//p" .env 2>/dev/null | head -n 1
+}
+
+env_set() {
+  key="$1"
+  value="$2"
+  tmp="$(mktemp)"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    sed "s|^${key}=.*|${key}=${value}|" .env >"$tmp"
+  else
+    cat .env 2>/dev/null >"$tmp" || :
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+  fi
+  cat "$tmp" >.env
+  rm -f "$tmp"
+}
+
+gen_password() {
+  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 24
+}
+
+# Enable OpenCode and make sure the container gets a real password and, when
+# present, a read-only seed of the host's OpenCode config and credentials.
+prepare_opencode_env() {
+  env_set OPENCODE_ENABLED 1
+
+  case "$(env_get OPENCODE_SSH_PASSWORD)" in
+    "" | change-me) env_set OPENCODE_SSH_PASSWORD "$(gen_password)" ;;
+  esac
+
+  case "$(env_get OPENCODE_CONFIG_DIR)" in
+    "" | "./var/opencode/seed/config")
+      [ -d "${HOME}/.config/opencode" ] && env_set OPENCODE_CONFIG_DIR "${HOME}/.config/opencode"
+      ;;
+  esac
+
+  case "$(env_get OPENCODE_DATA_DIR)" in
+    "" | "./var/opencode/seed/data")
+      [ -d "${HOME}/.local/share/opencode" ] && env_set OPENCODE_DATA_DIR "${HOME}/.local/share/opencode"
+      ;;
+  esac
 }
 
 yaml_get() {
   # yaml_get <key> — first match in etc/config.yml, quotes stripped
   sed -n "s/^[[:space:]]*$1:[[:space:]]*\"\{0,1\}\([^\"]*\)\"\{0,1\}[[:space:]]*$/\1/p" \
     "$ROOT/etc/config.yml" 2>/dev/null | head -n 1
+}
+
+opencode_get() {
+  # opencode_get <key> — first match inside the opencode: block
+  sed -n '/^opencode:/,/^[^[:space:]]/p' "$ROOT/etc/config.yml" 2>/dev/null |
+    sed -n "s/^[[:space:]]*$1:[[:space:]]*\"\{0,1\}\([^\"]*\)\"\{0,1\}[[:space:]]*$/\1/p" |
+    head -n 1
 }
 
 curl_code() {
@@ -276,6 +331,9 @@ print_table() {
   printf '  %-13s %s\n' 'Admin user' "${admin_user:-(not initialised)}"
   printf '  %-13s %s\n' 'Admin pass' "${admin_pass:-(not initialised)}"
   printf '  %-13s %s\n' 'SSH preset' "${ssh_user:-?}@${ssh_host:-?}:${ssh_port:-?}"
+  if [ "$(opencode_get enabled)" = "true" ]; then
+    printf '  %-13s %s\n' 'OpenCode' "$(opencode_get user)@$(opencode_get host):$(opencode_get port) (Termix workspace: $(opencode_get workspace))"
+  fi
   printf '  %-13s %s\n' 'Checkout' "$ROOT"
   printf '  %s\n' '──────────────────────────────────────────────────────────────'
   printf '\n'
@@ -335,6 +393,20 @@ case "$CMD" in
     fi
     print_table
     ;;
+  opencode)
+    ensure_env
+    prepare_opencode_env
+    export OPENCODE_ENABLED=1
+    log "building and starting the stack with the OpenCode container"
+    compose --profile opencode up -d --build
+    log "waiting for the public URL (up to ${TTT_WAIT}s)"
+    if ! wait_for_url; then
+      printf '\n'
+      print_table
+      die "timed out waiting for the tunnel; check: $DC logs tunnel"
+    fi
+    print_table
+    ;;
   pass | creds)
     print_table
     ;;
@@ -361,7 +433,7 @@ case "$CMD" in
       fi
     fi
     compose down -v || true
-    rm -rf "$ROOT/var/termix" "$ROOT/var/ssh" "$ROOT/var/host-ssh"
+    rm -rf "$ROOT/var/termix" "$ROOT/var/ssh" "$ROOT/var/host-ssh" "$ROOT/var/opencode"
     rm -f "$ROOT/var/host/url.txt" "$ROOT/var/host/hostname.txt" "$ROOT/var/host/cloudflared.log"
     rm -f "$ROOT/etc/config.yml" "$ROOT/.env"
     log "reset complete"
@@ -370,6 +442,6 @@ case "$CMD" in
     usage
     ;;
   *)
-    die "unknown command '$CMD' (try: up, pass, url, logs, down, reset)"
+    die "unknown command '$CMD' (try: up, opencode, pass, url, logs, down, reset)"
     ;;
 esac

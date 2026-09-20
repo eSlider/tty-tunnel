@@ -3,6 +3,7 @@
 [![ci](https://github.com/eSlider/tty-tunnel/actions/workflows/ci.yml/badge.svg)](https://github.com/eSlider/tty-tunnel/actions/workflows/ci.yml)
 [![smoke](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml/badge.svg)](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml)
 [![ghcr](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel)
+[![ghcr opencode](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel--opencode-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel-opencode)
 
 Run [Termix](https://github.com/Termix-SSH/Termix) (a self-hosted web SSH
 client) behind a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
@@ -25,6 +26,8 @@ On first run it also:
 ```
 Internet ──https──▶ Cloudflare edge ──tunnel──▶ tty-tunnel ──▶ Termix :8080
                         (trycloudflare.com)       (cloudflared)
+
+Termix ──ssh──▶ opencode container (isolated; no published ports)
 ```
 
 > **TryCloudflare is for testing and development only.** No SLA, no uptime
@@ -93,6 +96,26 @@ Pin to a release instead of `main` if you prefer:
 curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/v1.0.0/tty-tunnel.sh | sh
 ```
 
+### OpenCode in a Termix tab
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh -s -- opencode
+```
+
+Same stack, plus an isolated [OpenCode v2](https://opencode.ai/v2/docs) container
+and a Termix **default workspace that opens one `opencode` tab** on login. The
+tab lands directly in the OpenCode TUI — inside `tmux`, so it survives page
+reloads and reconnects — working in the container's `/workspace`.
+
+Just OpenCode, no server and no Termix:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/opencode.sh | sh
+```
+
+That runs the same image interactively in your terminal with the **current
+directory** mounted at `/workspace`. See [OpenCode](#opencode) for the details.
+
 ## Quick start
 
 Prefer to see the code first? Clone it. Requirements: a container runtime —
@@ -132,7 +155,8 @@ make up
 ```
 
 Open the public URL, log in with the generated credentials, and click the
-"Local host" host to get a shell.
+"Local host" host to get a shell. Add the isolated OpenCode tab with
+`make opencode` (see [OpenCode](#opencode)).
 
 Without `make`:
 
@@ -170,6 +194,8 @@ docker run --rm \
 | `var/host/cloudflared.log` | cloudflared logs | yes |
 | `var/termix/` | Termix database, keys, certificates | yes |
 | `var/ssh/id_ed25519` | SSH key generated on first run | yes |
+| `var/opencode/home/` | OpenCode config, credentials, sessions (container home) | yes |
+| `var/opencode/workspace/` | the OpenCode container's isolated working directory | yes |
 | `etc/config.yml` | generated admin credentials + prep state (`0600`) | yes |
 | `.env` | comes from `.env.example`, gets the generated password | yes |
 
@@ -194,10 +220,96 @@ Check the tunnel at any time with `make url`; show credentials with `make pass`.
 | `PUID` / `PGID` | `1000` | Ownership of files written into `var/`. |
 | `TUNNEL_TOKEN` | – | Named-tunnel token → **persistent** hostname (see below). |
 | `TUNNEL_HOSTNAME` | – | Hostname to report for a token-managed tunnel. |
+| `OPENCODE_ENABLED` | `0` | Set to `1` by `tty-tunnel.sh opencode` / `make opencode`. |
+| `OPENCODE_SSH_USER` | `opencode` | Account inside the OpenCode container. |
+| `OPENCODE_SSH_PASSWORD` | generated | Fallback password for that account (Termix uses the SSH key). |
+| `OPENCODE_WORKDIR` | `/workspace` | Where OpenCode starts inside the container. |
+| `OPENCODE_SEED` | `true` | Copy your host OpenCode config/credentials in once. |
+| `OPENCODE_CONFIG_DIR` | `~/.config/opencode` | Read-only seed source for the config. |
+| `OPENCODE_DATA_DIR` | `~/.local/share/opencode` | Read-only seed source for `auth.json`. |
+| `OPENCODE_WORKSPACE` | `opencode` | Name of the Termix default workspace that is seeded. |
 
 Extra, for the raw tunnel image: `HOST_DIR`, `METRICS_ADDR`, `READY_TIMEOUT`.
 
 ---
+
+## OpenCode
+
+Run [OpenCode v2](https://opencode.ai/v2/docs) in its own container, isolated
+from your host, and open it from a Termix tab.
+
+```bash
+./tty-tunnel.sh opencode        # or: make opencode
+```
+
+What that adds:
+
+- **`opencode` service** — `ghcr.io/eslider/tty-tunnel-opencode`, built from
+  [`opencode/Dockerfile`](opencode/Dockerfile): the official OpenCode v2 image
+  (Alpine) plus `openssh-server`, `tmux`, `bash`/`zsh`, `git`, `gh`, `fzf`,
+  `ripgrep`, `fd`, `bat`, `eza` (the maintained `exa`), `jq`, `yq`, `vim`,
+  `neovim`, `zoxide`, `direnv`, `lazygit`, `tree`, `htop`, `rsync`, `socat` and
+  more (`EXTRA_TOOLS` build arg for anything else).
+- **Termix host preset** `opencode@opencode:22`, key-based, using the SSH key the
+  bootstrap already generates.
+- **Default workspace `opencode`** with a single terminal tab. On login Termix
+  auto-applies the default workspace, so the OpenCode tab is simply there.
+
+### What opens
+
+The tab connects over SSH and the container's login shell attaches to a
+persistent `tmux` session running `opencode` in `/workspace`, so closing the
+browser or reloading the page keeps the session alive. Plain shells still work:
+
+```bash
+docker compose exec opencode su-exec opencode bash
+# from another container on the compose network:
+ssh -i var/ssh/id_ed25519 opencode@opencode 'opencode --version'
+```
+
+### Credentials
+
+Your host's `~/.config/opencode` and `~/.local/share/opencode/auth.json` are
+mounted **read-only** and copied into the container's own volume on first start
+(set `OPENCODE_SEED=false` to skip). Your host files are never written to, and
+the multi-hundred-MB session database is not copied. Change providers later from
+inside the tab with `opencode auth login`.
+
+### Isolation
+
+Only three things cross the boundary: the read-only seed, the read-only SSH key,
+and `var/opencode/workspace` mounted at `/workspace`. Nothing else of yours is
+visible. To let it loose on a real project:
+
+```yaml
+# docker-compose.override.yml
+services:
+  opencode:
+    volumes:
+      - ./my-project:/workspace
+```
+
+### Terminal only (no Termix)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/opencode.sh | sh
+```
+
+or directly:
+
+```bash
+docker run --rm -it \
+  -v tty-tunnel-opencode-home:/home/opencode \
+  -v "$PWD:/workspace" \
+  -v "$HOME/.config/opencode:/seed/config:ro" \
+  -v "$HOME/.local/share/opencode:/seed/data:ro" \
+  ghcr.io/eslider/tty-tunnel-opencode:latest
+```
+
+The standalone run mounts the **current directory** as `/workspace` — the point
+of a coding agent — while the Termix path stays fully isolated.
+`OPENCODE_IMAGE`, `OPENCODE_MODE=tui|sshd` and `OPENCODE_SEED` are available for
+both paths.
 
 ## Persistent hostname
 
@@ -238,9 +350,11 @@ The token flow above is simpler for most people.
 
 `.github/workflows/`:
 
-- **`ci.yml`** – shellcheck + hadolint, then builds and pushes a multi-arch
-  (`linux/amd64`, `linux/arm64`) image to `ghcr.io/eslider/tty-tunnel`. Pull
-  requests build but never push. Provenance and SBOM included. Image tags:
+- **`ci.yml`** – shellcheck + hadolint, then builds and pushes two multi-arch
+  (`linux/amd64`, `linux/arm64`) images: `ghcr.io/eslider/tty-tunnel` (the
+  cloudflared wrapper) and `ghcr.io/eslider/tty-tunnel-opencode` (OpenCode +
+  toolset). Pull requests build but never push. Provenance and SBOM included.
+  Image tags:
 
   | Ref | Tags |
   |---|---|
@@ -259,7 +373,9 @@ The token flow above is simpler for most people.
   PR checks on a release-please PR show as skipped/failed with no jobs — GitHub
   does not start workflows for PRs opened with `GITHUB_TOKEN`. It is harmless.
 - **`smoke.yml`** – starts the real stack, waits for the Cloudflare URL, then
-  reaches Termix and logs in **through the public URL**. It is marked
+  reaches Termix and logs in **through the public URL**. A second, independent
+  job builds the OpenCode image and proves key auth, exec, SFTP and that an
+  interactive session lands in the OpenCode TUI. Both are marked
   `continue-on-error` because TryCloudflare rate-limits CI IPs.
 
 > A brand-new quick-tunnel hostname can take a few seconds to resolve, and local
@@ -291,19 +407,24 @@ docker run --rm --add-host host.docker.internal:host-gateway \
   # ghcr.io/eslider/tty-tunnel:1       # track the 1.x line
   # ghcr.io/eslider/tty-tunnel:latest  # newest release
   # ghcr.io/eslider/tty-tunnel:edge    # every push to main
+
+docker run --rm -it -v "$PWD:/workspace" \
+  ghcr.io/eslider/tty-tunnel-opencode:1.2.3   # same tags for the OpenCode image
 ```
 
-The Termix image itself is upstream (`ghcr.io/lukegus/termix`); this repo only
-builds the tunnel wrapper and the bootstrap helper.
+The Termix image itself is upstream (`ghcr.io/lukegus/termix`); this repo builds
+the tunnel wrapper, the bootstrap helper and the OpenCode image.
 
 ### GHCR package visibility
 
 The first push creates the package as **private** even in a public repo. To make
-the one-liner work for everyone, set it public once:
+the one-liner work for everyone, set both packages public once:
 
 ```bash
 gh api -X PATCH /user/packages/container/tty-tunnel/visibility \
   -f visibility=public            # needs a PAT with the packages:write scope
+gh api -X PATCH /user/packages/container/tty-tunnel-opencode/visibility \
+  -f visibility=public
 ```
 
 or do it in the UI: *Package settings → Change visibility → Public*.
@@ -324,6 +445,10 @@ This project puts a **web SSH client on a public URL**. Treat it accordingly.
 - `AUTHORIZE_SSH_KEY=true` appends one public key (comment `tty-tunnel first-run key`)
   to `~/.ssh/authorized_keys`. To revoke, delete that line and remove the host
   from Termix; to skip entirely, set `AUTHORIZE_SSH_KEY=false`.
+- The OpenCode container has **no published ports** and is only reachable from
+  the Compose network. It shares that same SSH key; `OPENCODE_SEED=true` copies
+  your host provider credentials into its volume (read-only source, container
+  copy only) — set it to `false` if you would rather log in inside the tab.
 - For anything beyond a test, use a named tunnel plus
   [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
   in front of it.
@@ -332,6 +457,7 @@ This project puts a **web SSH client on a public URL**. Treat it accordingly.
 
 ```bash
 make up        # start, wait for the URL, print credentials
+make opencode  # same, plus the isolated OpenCode container and its Termix tab
 make url       # print the current public URL
 make pass      # print the Termix credentials
 make logs      # follow logs
@@ -378,4 +504,5 @@ MIT — see [LICENSE](LICENSE).
 Bundles/uses third-party software, each under its own license:
 [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0),
 [Termix](https://github.com/Termix-SSH/Termix) (Apache-2.0),
+[OpenCode](https://opencode.ai) (MIT),
 [guacamole/guacd](https://hub.docker.com/r/guacamole/guacd) (Apache-2.0).

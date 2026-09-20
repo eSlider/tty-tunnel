@@ -44,6 +44,12 @@ services:
       SSH_HOST: "${SSH_HOST:-host.docker.internal}"
       SSH_PORT: "${SSH_PORT:-22}"
       AUTHORIZE_SSH_KEY: "${AUTHORIZE_SSH_KEY:-true}"
+      OPENCODE_ENABLED: "${OPENCODE_ENABLED:-0}"
+      OPENCODE_SSH_USER: "${OPENCODE_SSH_USER:-opencode}"
+      OPENCODE_HOST: "${OPENCODE_HOST:-opencode}"
+      OPENCODE_SSH_PORT: "${OPENCODE_SSH_PORT:-22}"
+      OPENCODE_WORKDIR: "${OPENCODE_WORKDIR:-/workspace}"
+      OPENCODE_WORKSPACE: "${OPENCODE_WORKSPACE:-opencode}"
       PUID: "${PUID:-1000}"
       PGID: "${PGID:-1000}"
       WORKSPACE_DIR: /workspace
@@ -71,6 +77,37 @@ services:
       TUNNEL_HOSTNAME: "${TUNNEL_HOSTNAME:-}"
     volumes:
       - ./var/host:/var/host
+
+  # --------------------------------------------------------------- opencode ---
+  # OpenCode v2 in its own isolated container, reachable from Termix over SSH.
+  # Not started by default:
+  #   ./tty-tunnel.sh opencode        (or: docker compose --profile opencode up -d)
+  opencode:
+    build: ./opencode
+    image: ghcr.io/eslider/tty-tunnel-opencode:latest
+    container_name: tty-opencode
+    restart: unless-stopped
+    profiles: ["opencode"]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      OPENCODE_MODE: "sshd"
+      OPENCODE_USER: "opencode"
+      OPENCODE_UID: "${PUID:-1000}"
+      OPENCODE_GID: "${PGID:-1000}"
+      OPENCODE_WORKDIR: "${OPENCODE_WORKDIR:-/workspace}"
+      OPENCODE_SSH_PASSWORD: "${OPENCODE_SSH_PASSWORD:-}"
+      OPENCODE_SEED: "${OPENCODE_SEED:-true}"
+    volumes:
+      - ./var/opencode/home:/home/opencode
+      - ./var/opencode/workspace:/workspace
+      - ./var/ssh:/keys:ro
+      # The generated SSH password (when the CLI did not set one).
+      - ./etc:/config:ro
+      # Read-only seed of your host's OpenCode setup (copied once, never modified).
+      - ${OPENCODE_CONFIG_DIR:-./var/opencode/seed/config}:/seed/config:ro
+      - ${OPENCODE_DATA_DIR:-./var/opencode/seed/data}:/seed/data:ro
 
   # ----------------------------------------------------------------- guacd ---
   # Optional: RDP/VNC/Telnet support for Termix. Not started by default.
