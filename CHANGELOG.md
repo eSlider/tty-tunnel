@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/eSlider/tty-tunnel/compare/v1.2.0...v1.2.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **ci:** publish release images after release-please tags ([d8ad1d8](https://github.com/eSlider/tty-tunnel/commit/d8ad1d8d3626e8db2e9bfab16c0ed044635aa93c))
+
 ## [1.2.0](https://github.com/eSlider/tty-tunnel/compare/v1.1.0...v1.2.0) (2026-09-20)
 
 
