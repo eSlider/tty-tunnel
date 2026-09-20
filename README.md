@@ -253,6 +253,8 @@ The token flow above is simpler for most people.
   tag to publish the versioned images. (That dispatch is needed because tags
   created with the default `GITHUB_TOKEN` do not trigger workflows by themselves.)
   A manual `git push` of a tag triggers the same build directly.
+  PR checks on a release-please PR show as skipped/failed with no jobs — GitHub
+  does not start workflows for PRs opened with `GITHUB_TOKEN`. It is harmless.
 - **`smoke.yml`** – starts the real stack, waits for the Cloudflare URL, then
   reaches Termix and logs in **through the public URL**. It is marked
   `continue-on-error` because TryCloudflare rate-limits CI IPs.
