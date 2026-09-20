@@ -40,9 +40,16 @@ Internet ──https──▶ Cloudflare edge ──tunnel──▶ tty-tunnel �
 curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh
 ```
 
-That is the whole install. The script checks Docker, downloads the repo into
-`~/.tty-tunnel` (override with `TTT_HOME`), builds and starts the stack, waits
-for the Cloudflare URL, and prints the access table:
+That is the whole install. The script checks for a container runtime, downloads
+the repo into `~/.tty-tunnel` (override with `TTT_HOME`), builds and starts the
+stack, waits for the Cloudflare URL, and prints the access table:
+
+**Fresh machine?** On Ubuntu/Debian with nothing installed, the script installs
+Docker Engine for you from the [official apt repository](https://docs.docker.com/engine/install/ubuntu/)
+(asking first when it has a terminal), adds you to the `docker` group and
+continues — `sudo` is all it needs. Podman is detected and used automatically
+when Docker is absent. `TTT_INSTALL=no` never installs anything,
+`TTT_INSTALL=yes` skips the prompt.
 
 ```
   tty-tunnel — running now
@@ -85,8 +92,9 @@ curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/v1.0.0/tty-tunne
 
 ## Quick start
 
-Prefer to see the code first? Clone it. Requirements: Docker with the Compose
-plugin, and `make` (optional).
+Prefer to see the code first? Clone it. Requirements: a container runtime —
+Docker with the Compose plugin (the one-liner above installs it on
+Ubuntu/Debian) or Podman — and `make` (optional).
 
 ```bash
 git clone https://github.com/eslider/tty-tunnel.git

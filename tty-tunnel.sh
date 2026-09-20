@@ -5,7 +5,8 @@
 #
 # Starts (or inspects) the stack and prints the access table. When piped it
 # downloads the repo into $TTT_HOME (default ~/.tty-tunnel); from a clone it
-# works in place.
+# works in place. If no container runtime is found, Docker Engine is installed
+# on Debian/Ubuntu (official apt repository) after a prompt.
 #
 #   ./tty-tunnel.sh            start, wait for the URL, print the table
 #   ./tty-tunnel.sh pass       print just the access table
@@ -14,7 +15,11 @@
 #   ./tty-tunnel.sh down       stop the stack (keeps data)
 #   ./tty-tunnel.sh reset      DESTRUCTIVE: remove data, credentials and keys
 #
-# Env: TTT_HOME (checkout dir), TTT_WAIT (seconds to wait for the URL, default 180)
+# Env:
+#   TTT_HOME      checkout dir (default ~/.tty-tunnel)
+#   TTT_WAIT      seconds to wait for the URL (default 180)
+#   TTT_INSTALL   ask (default) | yes | no — install Docker when it is missing
+#   TTT_FORCE=1   skip the reset prompt
 
 set -eu
 
@@ -24,6 +29,8 @@ TARBALL="https://codeload.github.com/${REPO}/tar.gz/refs/heads/main"
 TTT_HOME="${TTT_HOME:-$HOME/.tty-tunnel}"
 TTT_WAIT="${TTT_WAIT:-180}"
 CMD="${1:-up}"
+
+DOCKER_DOCS="https://docs.docker.com/engine/install/ubuntu/"
 
 log() { printf '==> %s\n' "$*" >&2; }
 die() { printf '!!! %s\n' "$*" >&2; exit 1; }
@@ -45,23 +52,135 @@ Commands:
 
 Run with no checkout to install into $TTT_HOME (~/.tty-tunnel, or set TTT_HOME):
   curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh
-Env: TTT_HOME, TTT_WAIT (seconds to wait for the URL, default 180), TTT_FORCE=1 to skip the reset prompt.
+
+Missing Docker is installed automatically on Debian/Ubuntu (official apt repo,
+needs sudo). TTT_INSTALL=no never installs anything, TTT_INSTALL=yes skips the
+prompt. Podman is used automatically when it is present and Docker is not.
+Env: TTT_HOME, TTT_WAIT (URL timeout, default 180), TTT_FORCE=1 (skip reset prompt).
 EOF
 }
+
+# ------------------------------------------------------------ utilities -----
+fetch() {
+  # fetch <url> — print to stdout
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$1"
+  else
+    die "curl or wget is required"
+  fi
+}
+
+SUDO=""
+if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+fi
 
 compose() {
   # shellcheck disable=SC2086  # $DC is intentionally split ("docker compose")
   $DC "$@"
 }
 
-need docker
-if docker compose version >/dev/null 2>&1; then
-  DC="docker compose"
-elif command -v docker-compose >/dev/null 2>&1; then
-  DC="docker-compose"
-else
-  die "'docker compose' (or 'docker-compose') is required"
+# ---------------------------------------------------- container runtime -----
+# Sets $DC to the command prefix used for every compose call, e.g.
+# "docker compose", "sudo docker compose" or "podman compose".
+set_dc() {
+  if command -v docker >/dev/null 2>&1; then
+    if docker info >/dev/null 2>&1; then
+      DC="docker compose"
+      return 0
+    fi
+    if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
+      DC="$SUDO docker compose"
+      return 0
+    fi
+  fi
+  if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+    DC="podman compose"
+    return 0
+  fi
+  return 1
+}
+
+install_docker_apt() {
+  distro="$1"
+  codename="$2"
+  log "installing Docker Engine from the official apt repository ($distro/$codename)"
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y -qq ca-certificates curl
+  $SUDO install -m 0755 -d /etc/apt/keyrings
+  $SUDO curl -fsSL "https://download.docker.com/linux/${distro}/gpg" -o /etc/apt/keyrings/docker.asc
+  $SUDO chmod a+r /etc/apt/keyrings/docker.asc
+  arch="$(dpkg --print-architecture)"
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
+    "$arch" "$distro" "$codename" | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+install_docker_script() {
+  log "installing Docker Engine via get.docker.com"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | $SUDO sh
+  else
+    $SUDO sh -c "$(fetch https://get.docker.com)"
+  fi
+}
+
+install_runtime() {
+  mode="${TTT_INSTALL:-ask}"
+
+  if [ "$mode" = "no" ]; then
+    die "no container runtime found and TTT_INSTALL=no — install Docker first: $DOCKER_DOCS"
+  fi
+
+  if [ "$mode" = "ask" ] && [ -r /dev/tty ]; then
+    printf '  Docker is not installed. Install Docker Engine now? [Y/n] ' >/dev/tty
+    answer=""
+    read -r answer </dev/tty || answer=""
+    case "$answer" in
+      n | N | no | NO) die "aborted — install Docker first: $DOCKER_DOCS" ;;
+    esac
+  fi
+
+  if [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
+    die "installing Docker requires root or sudo — see $DOCKER_DOCS"
+  fi
+
+  if command -v apt-get >/dev/null 2>&1 && [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    case "${ID:-}" in
+      ubuntu | debian) install_docker_apt "$ID" "${VERSION_CODENAME:-stable}" ;;
+      *) install_docker_script ;;
+    esac
+  else
+    install_docker_script
+  fi
+
+  if [ -n "$SUDO" ]; then
+    $SUDO systemctl enable --now docker >/dev/null 2>&1 ||
+      $SUDO service docker start >/dev/null 2>&1 || true
+    if ! id -nG "$USER" 2>/dev/null | grep -qw docker; then
+      $SUDO usermod -aG docker "$USER" 2>/dev/null || true
+      log "added $USER to the 'docker' group (active after your next login; using sudo now)"
+    fi
+  fi
+
+  command -v docker >/dev/null 2>&1 ||
+    die "Docker was installed but is not on PATH — open a new shell and re-run, or see $DOCKER_DOCS"
+}
+
+if ! set_dc; then
+  install_runtime
+  set_dc || die "Docker is installed but the daemon is not reachable. Start it with 'sudo systemctl start docker' and re-run."
 fi
+
+case "$DC" in
+  podman*) log "using podman: compose support is best-effort; Docker is recommended" ;;
+  sudo*) log "using sudo for docker (your user is not in the 'docker' group yet)" ;;
+esac
 
 is_repo_root() {
   [ -f "$1/docker-compose.yml" ] && [ -f "$1/entrypoint.sh" ] && [ -f "$1/bootstrap/entrypoint.sh" ]
@@ -85,9 +204,8 @@ if [ -z "$ROOT" ]; then
   if command -v git >/dev/null 2>&1; then
     git clone --depth 1 "$REPO_URL" "${TTT_HOME}.tmp" >/dev/null 2>&1
   else
-    need curl
     need tar
-    curl -fsSL "$TARBALL" | tar -xz -C "${TTT_HOME}.tmp" --strip-components=1
+    fetch "$TARBALL" | tar -xz -C "${TTT_HOME}.tmp" --strip-components=1
   fi
   mkdir -p "$(dirname "$TTT_HOME")"
   rm -rf "$TTT_HOME"
