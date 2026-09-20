@@ -1,0 +1,17 @@
+# Override for targets that are only bound to 127.0.0.1 on the host, e.g.
+# services published as "127.0.0.1:8080:8080" or plain local dev servers that
+# do not listen on the docker bridge.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.hostnet.yml up -d
+#
+# In host networking the tunnel resolves `localhost` directly, so TARGET_HOST
+# defaults to 127.0.0.1 instead of the Compose service name.
+name: tty-tunnel
+
+services:
+  tunnel:
+    network_mode: host
+    extra_hosts: []
+    environment:
+      TARGET_HOST: "${TARGET_HOST:-127.0.0.1}"

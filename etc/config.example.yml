@@ -1,0 +1,15 @@
+# Example of the file tty-tunnel generates at etc/config.yml on first run.
+# The real file is chmod 600 and gitignored — copy it to your password manager.
+termix:
+  url: "http://localhost:8080"
+  admin_user: "admin"
+  admin_password: ""
+  registration_open: false
+  created_at: ""
+ssh:
+  host: "host.docker.internal"
+  port: 22
+  user: "change-me"
+  private_key: "var/ssh/id_ed25519"
+  authorized_on_host: false
+  host_created_in_termix: false

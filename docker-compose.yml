@@ -1,0 +1,82 @@
+name: tty-tunnel
+
+services:
+  # ---------------------------------------------------------------- Termix ---
+  termix:
+    image: ghcr.io/lukegus/termix:latest
+    container_name: tty-termix
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      ENABLE_TELEMETRY: "false"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+    volumes:
+      - ./var/termix:/app/data
+    ports:
+      # Local access only. The public entrypoint is the Cloudflare tunnel.
+      - "127.0.0.1:${TERMIX_LOCAL_PORT:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:30001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ------------------------------------------------------------- bootstrap ---
+  # One-shot: creates the admin user, closes registration and seeds the SSH
+  # host preset. The tunnel waits for it, so Termix is never publicly exposed
+  # before it has an admin.
+  bootstrap:
+    build: ./bootstrap
+    container_name: tty-bootstrap
+    restart: "no"
+    depends_on:
+      termix:
+        condition: service_healthy
+    environment:
+      TERMIX_URL: "http://termix:8080"
+      TERMIX_LOCAL_URL: "http://localhost:${TERMIX_LOCAL_PORT:-8080}"
+      TERMIX_ADMIN_USER: "${TERMIX_ADMIN_USER:-admin}"
+      SSH_USER: "${SSH_USER:-root}"
+      SSH_HOST: "${SSH_HOST:-host.docker.internal}"
+      SSH_PORT: "${SSH_PORT:-22}"
+      AUTHORIZE_SSH_KEY: "${AUTHORIZE_SSH_KEY:-true}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      WORKSPACE_DIR: /workspace
+      CONFIG_DIR: /workspace/etc
+      KEY_DIR: /workspace/var/ssh
+      HOST_SSH_DIR: /host-ssh
+    volumes:
+      - ./:/workspace
+      - ${HOST_SSH_DIR:-./var/host-ssh}:/host-ssh
+
+  # ---------------------------------------------------------------- tunnel ---
+  tunnel:
+    build: .
+    image: ghcr.io/eslider/tty-tunnel:latest
+    container_name: tty-tunnel
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      PORT: "${PORT:-8080}"
+      TARGET_HOST: "${TARGET_HOST:-termix}"
+      TARGET_PROTO: "${TARGET_PROTO:-http}"
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+      TUNNEL_HOSTNAME: "${TUNNEL_HOSTNAME:-}"
+    volumes:
+      - ./var/host:/var/host
+
+  # ----------------------------------------------------------------- guacd ---
+  # Optional: RDP/VNC/Telnet support for Termix. Not started by default.
+  #   docker compose --profile rdp up -d
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: tty-guacd
+    restart: unless-stopped
+    profiles: ["rdp"]
