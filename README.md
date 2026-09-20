@@ -34,9 +34,59 @@ Internet ──https──▶ Cloudflare edge ──tunnel──▶ tty-tunnel �
 
 ---
 
+## One-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh
+```
+
+That is the whole install. The script checks Docker, downloads the repo into
+`~/.tty-tunnel` (override with `TTT_HOME`), builds and starts the stack, waits
+for the Cloudflare URL, and prints the access table:
+
+```
+  tty-tunnel — running now
+  ──────────────────────────────────────────────────────────────
+  Public URL    https://three-random-words.trycloudflare.com
+  Local Termix  http://localhost:8080
+  Admin user    admin
+  Admin pass    Xk39Qp2vLm7TzR8aBcD4eF1g
+  SSH preset    ano@host.docker.internal:22
+  Checkout      /home/you/.tty-tunnel
+  ──────────────────────────────────────────────────────────────
+
+  checks
+  ──────────────────────────────────────────────────────────────
+  GET  /                     200
+  POST /users/login          200
+  registration               closed
+  ──────────────────────────────────────────────────────────────
+```
+
+Open the public URL, log in with the generated credentials and click
+"Local host" for a shell.
+
+Same script as a small CLI (handy after the first run, or from a clone as
+`./tty-tunnel.sh`):
+
+```bash
+sh ~/.tty-tunnel/tty-tunnel.sh pass    # print the table again
+sh ~/.tty-tunnel/tty-tunnel.sh url     # just the public URL
+sh ~/.tty-tunnel/tty-tunnel.sh logs    # follow the logs
+sh ~/.tty-tunnel/tty-tunnel.sh down    # stop, keep all data
+sh ~/.tty-tunnel/tty-tunnel.sh reset   # DESTRUCTIVE: wipe everything
+```
+
+Pin to a release instead of `main` if you prefer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/v1.0.0/tty-tunnel.sh | sh
+```
+
 ## Quick start
 
-Requirements: Docker with the Compose plugin, and `make` (optional).
+Prefer to see the code first? Clone it. Requirements: Docker with the Compose
+plugin, and `make` (optional).
 
 ```bash
 git clone https://github.com/eslider/tty-tunnel.git
