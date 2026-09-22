@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/eSlider/tty-tunnel/compare/v1.3.0...v1.4.0) (2026-09-22)
+
+
+### Features
+
+* **gotty:** lightweight browser TTY into the host shell as an alternative tunnel target ([eb4bef2](https://github.com/eSlider/tty-tunnel/commit/eb4bef210e8b1be9c6707bcfb4b5aa4524aeb49b))
+
 ## [1.3.0](https://github.com/eSlider/tty-tunnel/compare/v1.2.1...v1.3.0) (2026-09-20)
 
 
