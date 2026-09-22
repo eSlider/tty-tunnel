@@ -52,10 +52,8 @@ wait-url: ## wait for the tunnel URL and print it
 url: ## print the current public URL
 	@cat var/host/url.txt
 
-pass: ## print the generated Termix credentials
-	@if [ -f etc/config.yml ]; then \
-		sed -n 's/^  admin_user: "\(.*\)"/  user: \1/p; s/^  admin_password: "\(.*\)"/  pass: \1/p' etc/config.yml; \
-	else echo "  not initialised yet — run: make up"; fi
+pass: ## print the access table for whatever the tunnel targets (Termix or gotty)
+	@sh ./tty-tunnel.sh pass
 
 logs: ## follow the stack logs
 	$(COMPOSE) logs -f --tail=100
