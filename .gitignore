@@ -1,6 +1,7 @@
 # Generated secrets / runtime state. Never commit these.
 .env
 etc/config.yml
+etc/gotty.env
 var/host/*
 var/termix/*
 var/ssh/*

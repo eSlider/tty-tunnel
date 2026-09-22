@@ -156,3 +156,43 @@ jobs:
         run: |
           docker rm -f ttt-opencode || true
           docker network rm ttt-ci || true
+
+  gotty:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the gotty image
+        run: docker build -t tty-tunnel-gotty:ci ./gotty
+
+      - name: Start it with a harmless command
+        run: |
+          docker run -d --name ttt-gotty -p 127.0.0.1:18080:8080 \
+            -e GOTTY_USER=ci \
+            -e GOTTY_PASSWORD=ci-pass \
+            -e GOTTY_WS_ORIGIN='.*' \
+            -e GOTTY_ENABLE_WEBGL=false \
+            -e GOTTY_COMMAND='tail -f /etc/hostname' \
+            tty-tunnel-gotty:ci
+          sleep 4
+
+      - name: The page is protected by basic auth
+        run: |
+          anon=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/)
+          auth=$(curl -s -o /dev/null -w '%{http_code}' -u ci:ci-pass http://127.0.0.1:18080/)
+          echo "anonymous=$anon authenticated=$auth"
+          test "$anon" = "401"
+          test "$auth" = "200"
+
+      - name: The WebSocket carries terminal output
+        run: python3 scripts/ws-check.py 127.0.0.1 18080 ci ci-pass plain 10
+
+      - name: Logs on failure
+        if: failure()
+        run: docker logs ttt-gotty
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f ttt-gotty

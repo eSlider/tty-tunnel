@@ -45,6 +45,8 @@ tty-tunnel — run Termix behind a Cloudflare Tunnel.
 Commands:
   up       build, start the stack, wait for the public URL, print the table  (default)
   opencode same, plus the isolated OpenCode container and its Termix tab
+  tty      same, but the tunnel points at gotty: a lightweight browser TTY
+           straight into the host shell (xterm.js over WebSocket)
   pass     print just the access table (URL, credentials, SSH preset)
   url      print the current public URL
   logs     follow the logs
@@ -58,7 +60,9 @@ Missing Docker is installed automatically on Debian/Ubuntu (official apt repo,
 needs sudo). TTT_INSTALL=no never installs anything, TTT_INSTALL=yes skips the
 prompt. Podman is used automatically when it is present and Docker is not.
 The `opencode` command also starts the isolated OpenCode container and seeds a
-Termix workspace with an opencode terminal tab.
+Termix workspace with an opencode terminal tab. The `tty` command switches the
+tunnel target to gotty for a lightweight browser TTY on the host shell (re-run
+`up` to point it back at Termix).
 Env: TTT_HOME, TTT_WAIT (URL timeout, default 180), TTT_FORCE=1 (skip reset prompt).
 EOF
 }
@@ -275,6 +279,13 @@ prepare_opencode_env() {
   esac
 }
 
+# Give the gotty service a real password (never ship "change-me").
+prepare_gotty_env() {
+  case "$(env_get GOTTY_PASSWORD)" in
+    "" | change-me) env_set GOTTY_PASSWORD "$(gen_password)" ;;
+  esac
+}
+
 yaml_get() {
   # yaml_get <key> — first match in etc/config.yml, quotes stripped
   sed -n "s/^[[:space:]]*$1:[[:space:]]*\"\{0,1\}\([^\"]*\)\"\{0,1\}[[:space:]]*$/\1/p" \
@@ -299,6 +310,20 @@ curl_code() {
   printf '%s' "$code"
 }
 
+container_env() {
+  # container_env <container> <key> — a value from the running container.
+  # Compose has no `inspect`, so strip " compose" and use the runtime directly.
+  dc_bin="${DC% compose}"
+  # shellcheck disable=SC2086  # $dc_bin is intentionally split ("sudo docker")
+  $dc_bin inspect "$1" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+    sed -n "s/^$2=//p" | head -n 1
+}
+
+tunnel_target() {
+  # What the running tunnel forwards to (termix by default, gotty in `tty` mode).
+  container_env tty-tunnel TARGET_HOST
+}
+
 wait_for_url() {
   i=0
   while [ "$i" -lt "$TTT_WAIT" ]; do
@@ -313,7 +338,64 @@ wait_for_url() {
   return 1
 }
 
+print_tty_table() {
+  url="$(cat "$ROOT/var/host/url.txt" 2>/dev/null || true)"
+  gotty_user="$(container_env tty-gotty GOTTY_USER)"
+  gotty_pass="$(container_env tty-gotty GOTTY_PASSWORD)"
+  gotty_local="${GOTTY_LOCAL_PORT:-$(env_get GOTTY_LOCAL_PORT)}"
+  ssh_user="$(yaml_get user)"
+  ssh_host="$(yaml_get host)"
+  ssh_port="$(yaml_get port)"
+
+  printf '\n'
+  printf '  tty-tunnel — running now (gotty)\n'
+  printf '  %s\n' '──────────────────────────────────────────────────────────────'
+  printf '  %-13s %s\n' 'Public URL' "${url:-(starting…)}"
+  printf '  %-13s %s\n' 'TTY user' "${gotty_user:-tty}"
+  printf '  %-13s %s\n' 'TTY pass' "${gotty_pass:-?}"
+  printf '  %-13s %s\n' 'Host shell' "${ssh_user:-?}@${ssh_host:-?}:${ssh_port:-?}"
+  printf '  %-13s %s\n' 'Local gotty' "http://localhost:${gotty_local:-8081}"
+  printf '  %-13s %s\n' 'Checkout' "$ROOT"
+  printf '  %s\n' '──────────────────────────────────────────────────────────────'
+  printf '\n'
+
+  [ -n "$url" ] || return 0
+
+  printf '  checking reachability…\n' >&2
+  anon=""
+  i=0
+  while [ "$i" -lt 15 ]; do
+    anon="$(curl_code "$url/")"
+    case "$anon" in
+      000)
+        i=$((i + 1))
+        sleep 3
+        ;;
+      *) break ;;
+    esac
+  done
+  authed="$(curl_code -u "${gotty_user:-tty}:${gotty_pass}" "$url/")"
+
+  printf '  checks\n'
+  printf '  %s\n' '──────────────────────────────────────────────────────────────'
+  printf '  %-26s %s\n' 'GET  / (anonymous)' "${anon:-000}"
+  printf '  %-26s %s\n' 'GET  / (authenticated)' "${authed:-000}"
+  printf '  %s\n' '──────────────────────────────────────────────────────────────'
+  printf '\n'
+  if [ "$anon" = "000" ]; then
+    printf '  note: the tunnel URL is not resolvable yet — retry in a few seconds,\n'
+    printf '        or flush the DNS cache (resolvectl flush-caches).\n\n'
+  fi
+  printf '  logs: %s logs -f gotty   ·   back to Termix: ./tty-tunnel.sh up\n' "$DC"
+  printf '\n'
+}
+
 print_table() {
+  if [ "$(tunnel_target)" = "gotty" ]; then
+    print_tty_table
+    return 0
+  fi
+
   url="$(cat "$ROOT/var/host/url.txt" 2>/dev/null || true)"
   local_port="${TERMIX_LOCAL_PORT:-$(sed -n 's/^TERMIX_LOCAL_PORT=//p' "$ROOT/.env" 2>/dev/null | head -n1)}"
   local_url="http://localhost:${local_port:-8080}"
@@ -407,6 +489,25 @@ case "$CMD" in
     fi
     print_table
     ;;
+  tty)
+    ensure_env
+    prepare_gotty_env
+    if [ "$(yaml_get authorized_on_host)" = "false" ]; then
+      log "warning: the SSH key was not authorized on the host (AUTHORIZE_SSH_KEY=false)"
+      log "         gotty will not be able to log in — see etc/config.yml"
+    fi
+    export TARGET_HOST=gotty
+    export PORT=8080
+    log "building and starting the stack with the lightweight TTY (gotty)"
+    compose --profile tty up -d --build
+    log "waiting for the public URL (up to ${TTT_WAIT}s)"
+    if ! wait_for_url; then
+      printf '\n'
+      print_table
+      die "timed out waiting for the tunnel; check: $DC logs tunnel"
+    fi
+    print_table
+    ;;
   pass | creds)
     print_table
     ;;
@@ -435,13 +536,13 @@ case "$CMD" in
     compose down -v || true
     rm -rf "$ROOT/var/termix" "$ROOT/var/ssh" "$ROOT/var/host-ssh" "$ROOT/var/opencode"
     rm -f "$ROOT/var/host/url.txt" "$ROOT/var/host/hostname.txt" "$ROOT/var/host/cloudflared.log"
-    rm -f "$ROOT/etc/config.yml" "$ROOT/.env"
+    rm -f "$ROOT/etc/config.yml" "$ROOT/etc/gotty.env" "$ROOT/.env"
     log "reset complete"
     ;;
   -h | --help | help)
     usage
     ;;
   *)
-    die "unknown command '$CMD' (try: up, opencode, pass, url, logs, down, reset)"
+    die "unknown command '$CMD' (try: up, opencode, tty, pass, url, logs, down, reset)"
     ;;
 esac

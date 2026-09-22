@@ -109,6 +109,41 @@ services:
       - ${OPENCODE_CONFIG_DIR:-./var/opencode/seed/config}:/seed/config:ro
       - ${OPENCODE_DATA_DIR:-./var/opencode/seed/data}:/seed/data:ro
 
+  # ------------------------------------------------------------------ gotty ---
+  # Lightweight browser TTY (xterm.js over WebSocket, ~35 MB) that logs into the
+  # host shell over SSH with the key the bootstrap already authorized. Used as
+  # the tunnel target instead of Termix:
+  #   ./tty-tunnel.sh tty       (or: TARGET_HOST=gotty docker compose --profile tty up -d)
+  # WebSocket only — no SSE — so it works on Quick Tunnels.
+  gotty:
+    build: ./gotty
+    image: ghcr.io/eslider/tty-tunnel-gotty:latest
+    container_name: tty-gotty
+    restart: unless-stopped
+    profiles: ["tty"]
+    environment:
+      GOTTY_PORT: "8080"
+      GOTTY_USER: "${GOTTY_USER:-tty}"
+      GOTTY_PASSWORD: "${GOTTY_PASSWORD:-}"
+      GOTTY_WS_ORIGIN: "${GOTTY_WS_ORIGIN:-.*}"
+      GOTTY_TITLE: "${GOTTY_TITLE:-tty-tunnel}"
+      GOTTY_ENABLE_WEBGL: "${GOTTY_ENABLE_WEBGL:-true}"
+      GOTTY_REMOTE_COMMAND: "${GOTTY_REMOTE_COMMAND:-}"
+      SSH_HOST: "${SSH_HOST:-host.docker.internal}"
+      SSH_PORT: "${SSH_PORT:-22}"
+      SSH_USER: "${SSH_USER:-root}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+    volumes:
+      - ./var/ssh:/keys:ro
+      # Holds the generated credentials (etc/gotty.env) if the CLI did not set one.
+      - ./etc:/config
+    ports:
+      # Local access only. The public entrypoint is the Cloudflare tunnel.
+      - "127.0.0.1:${GOTTY_LOCAL_PORT:-8081}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # ----------------------------------------------------------------- guacd ---
   # Optional: RDP/VNC/Telnet support for Termix. Not started by default.
   #   docker compose --profile rdp up -d

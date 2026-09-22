@@ -4,6 +4,7 @@
 [![smoke](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml/badge.svg)](https://github.com/eSlider/tty-tunnel/actions/workflows/smoke.yml)
 [![ghcr](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel)
 [![ghcr opencode](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel--opencode-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel-opencode)
+[![ghcr gotty](https://img.shields.io/badge/ghcr.io-eslider%2Ftty--tunnel--gotty-blue)](https://github.com/eSlider/tty-tunnel/pkgs/container/tty-tunnel-gotty)
 
 Run [Termix](https://github.com/Termix-SSH/Termix) (a self-hosted web SSH
 client) behind a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
@@ -26,6 +27,8 @@ On first run it also:
 ```
 Internet ──https──▶ Cloudflare edge ──tunnel──▶ tty-tunnel ──▶ Termix :8080
                         (trycloudflare.com)       (cloudflared)
+                                                      │
+                                                      └─(tty mode)─▶ gotty :8080
 
 Termix ──ssh──▶ opencode container (isolated; no published ports)
 ```
@@ -116,6 +119,31 @@ curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/opencode.sh
 That runs the same image interactively in your terminal with the **current
 directory** mounted at `/workspace`. See [OpenCode](#opencode) for the details.
 
+### Lightweight TTY instead of Termix
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eSlider/tty-tunnel/main/tty-tunnel.sh | sh -s -- tty
+```
+
+Points the tunnel at [gotty](https://github.com/sorenisanerd/gotty) instead of
+Termix: a ~35 MB xterm.js terminal in the browser that SSHes straight into your
+host shell. Because it speaks **WebSocket** (not SSE like most web UIs), it also
+works through a Quick Tunnel. See [gotty](#gotty).
+
+```
+  tty-tunnel — running now (gotty)
+  ──────────────────────────────────────────────────────────────
+  Public URL    https://three-random-words.trycloudflare.com
+  TTY user      tty
+  TTY pass      hWTE7ki2HsPwEU6Q62mt7LUH
+  Host shell    ano@host.docker.internal:22
+  Local gotty   http://localhost:8081
+  ──────────────────────────────────────────────────────────────
+  checks
+  GET  / (anonymous)         401
+  GET  / (authenticated)     200
+```
+
 ## Quick start
 
 Prefer to see the code first? Clone it. Requirements: a container runtime —
@@ -197,6 +225,7 @@ docker run --rm \
 | `var/opencode/home/` | OpenCode config, credentials, sessions (container home) | yes |
 | `var/opencode/workspace/` | the OpenCode container's isolated working directory | yes |
 | `etc/config.yml` | generated admin credentials + prep state (`0600`) | yes |
+| `etc/gotty.env` | generated gotty credentials (`0600`) | yes |
 | `.env` | comes from `.env.example`, gets the generated password | yes |
 
 Check the tunnel at any time with `make url`; show credentials with `make pass`.
@@ -228,6 +257,12 @@ Check the tunnel at any time with `make url`; show credentials with `make pass`.
 | `OPENCODE_CONFIG_DIR` | `~/.config/opencode` | Read-only seed source for the config. |
 | `OPENCODE_DATA_DIR` | `~/.local/share/opencode` | Read-only seed source for `auth.json`. |
 | `OPENCODE_WORKSPACE` | `opencode` | Name of the Termix default workspace that is seeded. |
+| `GOTTY_USER` | `tty` | Basic-auth user for the gotty TTY. |
+| `GOTTY_PASSWORD` | generated | Basic-auth password; regenerate by deleting the value in `.env`. |
+| `GOTTY_LOCAL_PORT` | `8081` | Localhost port for the gotty page. |
+| `GOTTY_WS_ORIGIN` | `.*` | Origin regex gotty accepts for its WebSocket (`.*` is needed behind tunnels). |
+| `GOTTY_ENABLE_WEBGL` | `true` | xterm.js WebGL renderer. |
+| `GOTTY_REMOTE_COMMAND` | – | Command to run on the host after login, e.g. `tmux new -A -s tty-tunnel`. |
 
 Extra, for the raw tunnel image: `HOST_DIR`, `METRICS_ADDR`, `READY_TIMEOUT`.
 
@@ -311,6 +346,67 @@ of a coding agent — while the Termix path stays fully isolated.
 `OPENCODE_IMAGE`, `OPENCODE_MODE=tui|sshd` and `OPENCODE_SEED` are available for
 both paths.
 
+## gotty
+
+A lightweight alternative to Termix: [gotty](https://github.com/sorenisanerd/gotty)
+serves a single xterm.js terminal over **WebSocket** and SSHes into the host with
+the key the bootstrap already authorized.
+
+```bash
+./tty-tunnel.sh tty        # or: make tty
+```
+
+That starts the usual stack **plus** the `gotty` service and repoints the tunnel
+at it (`TARGET_HOST=gotty`). Termix keeps running locally on
+`http://localhost:8080`; run `./tty-tunnel.sh up` to point the tunnel back at
+it.
+
+| | |
+|---|---|
+| Image | `ghcr.io/eslider/tty-tunnel-gotty` (~35 MB; gotty release binary + `openssh-client`) |
+| URL | the public tunnel URL, straight into the terminal |
+| Auth | HTTP Basic — `GOTTY_USER` / generated `GOTTY_PASSWORD` (printed by `pass`) |
+| Shell | `ssh -tt $SSH_USER@host.docker.internal:$SSH_PORT` with `var/ssh/id_ed25519` |
+| Also local | `http://localhost:8081` |
+
+### Why it exists
+
+Web UIs that stream over SSE (opencode's, for example) cannot work on a Quick
+Tunnel: Cloudflare buffers the stream until the origin closes it, so the page
+hangs on "Loading". gotty uses WebSocket, which passes through untouched — the
+same reason Termix's terminal works.
+
+### Configuration
+
+| Variable | Default | What |
+|---|---|---|
+| `GOTTY_USER` | `tty` | Basic-auth user. |
+| `GOTTY_PASSWORD` | generated | Basic-auth password; regenerated if missing on a `tty` run. |
+| `GOTTY_LOCAL_PORT` | `8081` | Localhost port for direct access. |
+| `GOTTY_WS_ORIGIN` | `.*` | Origin regex gotty accepts for its WebSocket. Keep permissive behind a tunnel. |
+| `GOTTY_TITLE` | `tty-tunnel` | Browser tab title. |
+| `GOTTY_ENABLE_WEBGL` | `true` | xterm.js WebGL renderer; `false` uses the DOM renderer. |
+| `GOTTY_REMOTE_COMMAND` | – | Run this on the host after login, e.g. `tmux new -A -s tty-tunnel` (empty = login shell). |
+| `GOTTY_COMMAND` | – | Replaces the whole `ssh` argv, e.g. `bash` or `docker run -it --rm alpine`. |
+
+Session persistence: gotty starts one SSH per browser connection, so a dropped
+connection (or a reload) gives you a fresh shell. Set
+`GOTTY_REMOTE_COMMAND="tmux new -A -s tty-tunnel"` if you want to reattach to the
+same session instead (requires `tmux` on the host).
+
+### Security
+
+`gotty -w` is a **writable shell on your host** behind a single password. Treat
+the URL as a secret:
+
+- the generated password is 24 chars of `[A-Za-z0-9]`; change it in `.env` and
+  `./tty-tunnel.sh tty` again if you ever leak it;
+- the tunnel URL is public — put a named tunnel plus
+  [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
+  in front of it for anything beyond a test;
+- `KEYS_DIR`, `/config` and the host SSH key are the only things the container
+  can see; the shell itself runs on the host, not in the container.
+
 ## Persistent hostname
 
 A quick tunnel gets a **random `*.trycloudflare.com` hostname on every start**,
@@ -350,10 +446,11 @@ The token flow above is simpler for most people.
 
 `.github/workflows/`:
 
-- **`ci.yml`** – shellcheck + hadolint, then builds and pushes two multi-arch
+- **`ci.yml`** – shellcheck + hadolint, then builds and pushes three multi-arch
   (`linux/amd64`, `linux/arm64`) images: `ghcr.io/eslider/tty-tunnel` (the
-  cloudflared wrapper) and `ghcr.io/eslider/tty-tunnel-opencode` (OpenCode +
-  toolset). Pull requests build but never push. Provenance and SBOM included.
+  cloudflared wrapper), `ghcr.io/eslider/tty-tunnel-opencode` (OpenCode +
+  toolset) and `ghcr.io/eslider/tty-tunnel-gotty` (lightweight browser TTY).
+  Pull requests build but never push. Provenance and SBOM included.
   Image tags:
 
   | Ref | Tags |
@@ -373,10 +470,11 @@ The token flow above is simpler for most people.
   PR checks on a release-please PR show as skipped/failed with no jobs — GitHub
   does not start workflows for PRs opened with `GITHUB_TOKEN`. It is harmless.
 - **`smoke.yml`** – starts the real stack, waits for the Cloudflare URL, then
-  reaches Termix and logs in **through the public URL**. A second, independent
-  job builds the OpenCode image and proves key auth, exec, SFTP and that an
-  interactive session lands in the OpenCode TUI. Both are marked
-  `continue-on-error` because TryCloudflare rate-limits CI IPs.
+  reaches Termix and logs in **through the public URL**. Two more independent
+  jobs build the OpenCode image (key auth, exec, SFTP, interactive TUI) and the
+  gotty image (Basic auth plus a real WebSocket session carrying terminal
+  output, via `scripts/ws-check.py`). All are marked `continue-on-error`
+  because TryCloudflare rate-limits CI IPs.
 
 > A brand-new quick-tunnel hostname can take a few seconds to resolve, and local
 > stub resolvers (`systemd-resolved`) may briefly cache it as `NXDOMAIN`. The
@@ -410,10 +508,13 @@ docker run --rm --add-host host.docker.internal:host-gateway \
 
 docker run --rm -it -v "$PWD:/workspace" \
   ghcr.io/eslider/tty-tunnel-opencode:1.2.3   # same tags for the OpenCode image
+
+docker run --rm -p 8080:8080 -e GOTTY_USER=tty -e GOTTY_PASSWORD=secret \
+  ghcr.io/eslider/tty-tunnel-gotty:1.2.3      # ...and the gotty image
 ```
 
 The Termix image itself is upstream (`ghcr.io/lukegus/termix`); this repo builds
-the tunnel wrapper, the bootstrap helper and the OpenCode image.
+the tunnel wrapper, the bootstrap helper, the OpenCode image and the gotty image.
 
 ### GHCR package visibility
 
@@ -449,6 +550,9 @@ This project puts a **web SSH client on a public URL**. Treat it accordingly.
   the Compose network. It shares that same SSH key; `OPENCODE_SEED=true` copies
   your host provider credentials into its volume (read-only source, container
   copy only) — set it to `false` if you would rather log in inside the tab.
+- The gotty service is a **writable host shell** behind HTTP Basic auth over
+  HTTPS. It is published on `127.0.0.1:8081` locally only, and its password is
+  generated on the first `tty` run. See [gotty → Security](#security-1).
 - For anything beyond a test, use a named tunnel plus
   [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
   in front of it.
@@ -458,6 +562,7 @@ This project puts a **web SSH client on a public URL**. Treat it accordingly.
 ```bash
 make up        # start, wait for the URL, print credentials
 make opencode  # same, plus the isolated OpenCode container and its Termix tab
+make tty       # same, but the tunnel points at gotty (lightweight host TTY)
 make url       # print the current public URL
 make pass      # print the Termix credentials
 make logs      # follow logs
@@ -505,4 +610,5 @@ Bundles/uses third-party software, each under its own license:
 [cloudflared](https://github.com/cloudflare/cloudflared) (Apache-2.0),
 [Termix](https://github.com/Termix-SSH/Termix) (Apache-2.0),
 [OpenCode](https://opencode.ai) (MIT),
+[gotty](https://github.com/sorenisanerd/gotty) (MIT),
 [guacamole/guacd](https://hub.docker.com/r/guacamole/guacd) (Apache-2.0).
