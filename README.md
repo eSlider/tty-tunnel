@@ -476,11 +476,15 @@ The token flow above is simpler for most people.
   output, via `scripts/ws-check.py`). All are marked `continue-on-error`
   because TryCloudflare rate-limits CI IPs.
 
-> A brand-new quick-tunnel hostname can take a few seconds to resolve, and local
-> stub resolvers (`systemd-resolved`) may briefly cache it as `NXDOMAIN`. The
-> smoke test falls back to resolving over Cloudflare DoH for that reason. If a
-> fresh URL does not open for you, retry after a few seconds or flush the cache
-> with `resolvectl flush-caches`.
+> A brand-new quick-tunnel hostname can take a few seconds to resolve. Worse, a
+> local stub resolver (`systemd-resolved`) or a home router can cache the
+> `NXDOMAIN` it saw *before* the name existed at the edge — then the link looks
+> dead to you while it is perfectly live for everyone else. `tty-tunnel.sh pass`
+> detects exactly this (resolves over public DNS but not locally) and prints the
+> fixes. Quickest ones: `sudo resolvectl flush-caches`, point your DNS at
+> `1.1.1.1`, or turn on "Secure DNS (DoH)" in the browser — a browser using DoH
+> opens the URL even when the OS resolver is stale. The smoke test falls back to
+> Cloudflare DoH for the same reason.
 
 ### Cutting a release
 

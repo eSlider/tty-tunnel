@@ -310,6 +310,35 @@ curl_code() {
   printf '%s' "$code"
 }
 
+resolves_locally() {
+  # resolves_locally <url-or-host> — does the *system* resolver know the name?
+  host="${1#*://}"
+  host="${host%%/*}"
+  if command -v getent >/dev/null 2>&1; then
+    getent hosts "$host" >/dev/null 2>&1
+    return $?
+  fi
+  # No getent: curl exit 6 means "could not resolve host".
+  curl -sS -o /dev/null --max-time 8 "https://$host/" 2>/dev/null
+  [ "$?" -ne 6 ]
+}
+
+dns_warning() {
+  # dns_warning <url> — the tunnel answers over public DNS but not locally
+  host="${1#*://}"
+  host="${host%%/*}"
+  printf '  ! %s does not resolve on this machine,\n' "$host"
+  printf '    but it does through public DNS (1.1.1.1 / 8.8.8.8) — the tunnel is fine.\n'
+  printf '    A brand-new quick-tunnel name gets cached as NXDOMAIN by a local stub\n'
+  printf '    resolver or a home router before it goes live at the edge.\n'
+  printf '    Any one of these fixes it:\n'
+  printf '      - sudo resolvectl flush-caches\n'
+  printf '      - use 1.1.1.1/8.8.8.8 as your DNS, or switch on "Secure DNS (DoH)"\n'
+  printf '        in the browser (bypasses a stale OS/router resolver)\n'
+  printf '      - ./tty-tunnel.sh tty   (restart the tunnel for a fresh hostname)\n'
+  printf '\n'
+}
+
 container_env() {
   # container_env <container> <key> — a value from the running container.
   # Compose has no `inspect`, so strip " compose" and use the runtime directly.
@@ -383,8 +412,11 @@ print_tty_table() {
   printf '  %s\n' '──────────────────────────────────────────────────────────────'
   printf '\n'
   if [ "$anon" = "000" ]; then
-    printf '  note: the tunnel URL is not resolvable yet — retry in a few seconds,\n'
-    printf '        or flush the DNS cache (resolvectl flush-caches).\n\n'
+    if resolves_locally "$url"; then
+      printf '  note: the tunnel URL is not answering yet — retry in a few seconds.\n\n'
+    else
+      dns_warning "$url"
+    fi
   fi
   printf '  logs: %s logs -f gotty   ·   back to Termix: ./tty-tunnel.sh up\n' "$DC"
   printf '\n'
@@ -454,8 +486,11 @@ print_table() {
   printf '  %s\n' '──────────────────────────────────────────────────────────────'
   printf '\n'
   if [ "$root_code" = "000" ]; then
-    printf '  note: the tunnel URL is not resolvable yet — retry in a few seconds,\n'
-    printf '        or flush the DNS cache (resolvectl flush-caches).\n\n'
+    if resolves_locally "$url"; then
+      printf '  note: the tunnel URL is not answering yet — retry in a few seconds.\n\n'
+    else
+      dns_warning "$url"
+    fi
   fi
   printf '  logs: %s logs -f   ·   stop: %s down\n' "$DC" "$DC"
   printf '\n'
