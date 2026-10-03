@@ -169,9 +169,12 @@ jobs:
 
       - name: Start it with a harmless command
         run: |
+          # Random per-run credentials: nothing to hardcode (or leak).
+          PASS="$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+          echo "TTT_CI_PASS=$PASS" >> "$GITHUB_ENV"
           docker run -d --name ttt-gotty -p 127.0.0.1:18080:8080 \
             -e GOTTY_USER=ci \
-            -e GOTTY_PASSWORD=ci-pass \
+            -e GOTTY_PASSWORD="$PASS" \
             -e GOTTY_WS_ORIGIN='.*' \
             -e GOTTY_ENABLE_WEBGL=false \
             -e GOTTY_COMMAND='tail -f /etc/hostname' \
@@ -181,13 +184,13 @@ jobs:
       - name: The page is protected by basic auth
         run: |
           anon=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/)
-          auth=$(curl -s -o /dev/null -w '%{http_code}' -u ci:ci-pass http://127.0.0.1:18080/)
+          auth=$(curl -s -o /dev/null -w '%{http_code}' -u "ci:$TTT_CI_PASS" http://127.0.0.1:18080/)
           echo "anonymous=$anon authenticated=$auth"
           test "$anon" = "401"
           test "$auth" = "200"
 
       - name: The WebSocket carries terminal output
-        run: python3 scripts/ws-check.py 127.0.0.1 18080 ci ci-pass plain 10
+        run: python3 scripts/ws-check.py 127.0.0.1 18080 ci "$TTT_CI_PASS" plain 10
 
       - name: Logs on failure
         if: failure()

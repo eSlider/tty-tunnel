@@ -4,7 +4,7 @@ ENV_FILE := .env
 IMAGE ?= ghcr.io/eslider/tty-tunnel:latest
 
 .DEFAULT_GOAL := help
-.PHONY: help env build release up opencode tty wait-url down logs url pass login shell config clean reset
+.PHONY: help env hooks build release up opencode tty wait-url down logs url pass login shell config clean reset
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -17,6 +17,12 @@ env: ## create .env from .env.example with your ids (skipped if it exists)
 		    -e "s|^HOST_SSH_DIR=.*|HOST_SSH_DIR=$${HOME}/.ssh|" \
 		    .env.example > $(ENV_FILE); \
 		echo "==> created $(ENV_FILE)"; }
+
+hooks: ## install git hooks: gitleaks scans on commit (staged) and push (history)
+	git config core.hooksPath .githooks
+	@echo "==> git hooks installed (.githooks): pre-commit + pre-push run gitleaks"
+	@command -v gitleaks >/dev/null 2>&1 || \
+		echo "    note: no local gitleaks binary — the hooks fall back to ghcr.io/gitleaks/gitleaks"
 
 build: ## build the tunnel image locally
 	docker build -t $(IMAGE) .

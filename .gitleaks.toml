@@ -1,0 +1,47 @@
+# gitleaks policy for tty-tunnel.
+#
+# Baseline: default rules for the usual suspects (cloud keys, private keys,
+# JWTs, curl credentials, ...) plus one project rule, because this project's
+# own CLI *prints* credentials in a fixed shape and those get copy-pasted into
+# docs/logs:
+#
+#   Admin pass    Xk39Qp2vLm7TzR8aBcD4eF1g
+#   TTY pass      <24 chars>
+#   admin_password: "<24 chars>"
+#   GOTTY_PASSWORD=<24 chars>
+#
+# Documented placeholders are allowlisted below; keep new examples fake.
+
+title = "tty-tunnel"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tty-tunnel-credential"
+description = "Generated tty-tunnel credential pasted from CLI output or etc/config.yml"
+regex = '''(?i)(admin pass|tty pass|admin_password|ssh_password|gotty_password|TERMIX_ADMIN_PASSWORD|GOTTY_PASSWORD|OPENCODE_SSH_PASSWORD)[":=\s]+([A-Za-z0-9_-]{20,})'''
+secretGroup = 2
+keywords = ["pass"]
+tags = ["secret", "tty-tunnel"]
+
+[allowlist]
+description = "Known placeholders and one rotated value"
+regexes = [
+  # The fake credentials used in README examples (also in the banner samples).
+  '''Xk39Qp2vLm7TzR8aBcD4eF1g''',
+  # A real gotty password that was published in README.md from 2026-09-22 to
+  # 2026-10-03. It was rotated the moment it was found, so the copies left in
+  # git history are dead; allowlisted instead of rewriting history.
+  '''hWTE7ki2HsPwEU6Q62mt7LUH''',
+  # Throwaway credentials of an ephemeral CI container bound to 127.0.0.1
+  # (previous smoke.yml revision; new runs generate them at runtime).
+  '''ci:ci-pass''',
+]
+stopwords = [
+  "change-me",
+  "placeholder",
+  "example",
+  "you@",
+  "three-random-words",
+]

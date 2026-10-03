@@ -1,0 +1,16 @@
+#!/bin/sh
+# pre-push: scan the whole history that is about to become public. Cheap here
+# (milliseconds) and it catches anything that slipped past pre-commit with
+# --no-verify, including rewrites and merges.
+set -u
+
+# shellcheck source=.githooks/lib-gitleaks.sh
+. "$(dirname "$0")/lib-gitleaks.sh"
+
+if [ "${GITLEAKS_SKIP:-0}" = "1" ]; then
+  echo "gitleaks: skipped (GITLEAKS_SKIP=1)"
+  exit 0
+fi
+
+gl_run git --no-banner --redact --config .gitleaks.toml .
+gl_verdict $? "the pushed history"

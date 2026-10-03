@@ -67,7 +67,7 @@ when Docker is absent. `TTT_INSTALL=no` never installs anything,
   Local Termix  http://localhost:8080
   Admin user    admin
   Admin pass    Xk39Qp2vLm7TzR8aBcD4eF1g
-  SSH preset    ano@host.docker.internal:22
+  SSH preset    you@host.docker.internal:22
   Checkout      /home/you/.tty-tunnel
   ──────────────────────────────────────────────────────────────
 
@@ -135,8 +135,8 @@ works through a Quick Tunnel. See [gotty](#gotty).
   ──────────────────────────────────────────────────────────────
   Public URL    https://three-random-words.trycloudflare.com
   TTY user      tty
-  TTY pass      hWTE7ki2HsPwEU6Q62mt7LUH
-  Host shell    ano@host.docker.internal:22
+  TTY pass      Xk39Qp2vLm7TzR8aBcD4eF1g
+  Host shell    you@host.docker.internal:22
   Local gotty   http://localhost:8081
   ──────────────────────────────────────────────────────────────
   checks
@@ -171,7 +171,7 @@ make up
   admin user : admin
   admin pass : Xk39Qp2vLm7TzR8aBcD4eF1g
   saved in   : etc/config.yml and .env
-  SSH preset : ano@host.docker.internal:22 (key authorized: true)
+  SSH preset : you@host.docker.internal:22 (key authorized: true)
   ----------------------------------------------------------
 
   tty-tunnel is live
@@ -446,7 +446,8 @@ The token flow above is simpler for most people.
 
 `.github/workflows/`:
 
-- **`ci.yml`** – shellcheck + hadolint, then builds and pushes three multi-arch
+- **`ci.yml`** – shellcheck + hadolint, a **gitleaks** scan, then builds and
+  pushes three multi-arch
   (`linux/amd64`, `linux/arm64`) images: `ghcr.io/eslider/tty-tunnel` (the
   cloudflared wrapper), `ghcr.io/eslider/tty-tunnel-opencode` (OpenCode +
   toolset) and `ghcr.io/eslider/tty-tunnel-gotty` (lightweight browser TTY).
@@ -485,6 +486,38 @@ The token flow above is simpler for most people.
 > `1.1.1.1`, or turn on "Secure DNS (DoH)" in the browser — a browser using DoH
 > opens the URL even when the OS resolver is stale. The smoke test falls back to
 > Cloudflare DoH for the same reason.
+
+### Secret scanning
+
+[gitleaks](https://github.com/gitleaks/gitleaks) runs in three places with one
+shared config, [`.gitleaks.toml`](.gitleaks.toml):
+
+| Where | What it scans | Blocking |
+|---|---|---|
+| `git commit` (`.githooks/pre-commit`) | the **staged** diff | yes, locally |
+| `git push` (`.githooks/pre-push`) | the **whole history** being pushed | yes, locally |
+| `ci.yml` → `secrets` job | the **whole history** of the checkout | yes, and `build` waits for it |
+
+Install the hooks in a fresh clone:
+
+```bash
+make hooks          # git config core.hooksPath .githooks
+```
+
+The hooks use a local `gitleaks` binary when present, otherwise the official
+`ghcr.io/gitleaks/gitleaks` image (docker → podman). CI pins a specific image
+tag and scans with `fetch-depth: 0`. Bypass deliberately with
+`GITLEAKS_SKIP=1 git commit ...` — CI is the hard gate.
+
+Beyond the default rules, the config adds `tty-tunnel-credential` for this
+project's own output shape (`Admin pass`, `TTY pass`, `admin_password:`,
+`GOTTY_PASSWORD=`, …), because that is exactly how a real password got pasted
+into the README once. Keep examples fake (`change-me`, `Xk39Qp2vLm7TzR8aBcD4eF1g`);
+genuine false positives go into the config's allowlist with a comment.
+
+> `gitleaks dir .` on a *running* checkout is noisy by design — `var/` holds the
+> real credentials of the live stack. Scan `git` (history) locally; `dir` is for
+> clean trees.
 
 ### Cutting a release
 
@@ -573,6 +606,7 @@ make logs      # follow logs
 make down      # stop, keep all data
 make clean     # stop, drop URL and logs
 make reset     # DESTRUCTIVE: wipe var/, credentials and .env
+make hooks     # install the git hooks (gitleaks on commit and push)
 ```
 
 `restart: unless-stopped` on `termix` and `tunnel` means the stack comes back

@@ -1,0 +1,14 @@
+#!/bin/sh
+# pre-commit: scan the staged diff for secrets before it becomes history.
+set -u
+
+# shellcheck source=.githooks/lib-gitleaks.sh
+. "$(dirname "$0")/lib-gitleaks.sh"
+
+if [ "${GITLEAKS_SKIP:-0}" = "1" ]; then
+  echo "gitleaks: skipped (GITLEAKS_SKIP=1)"
+  exit 0
+fi
+
+gl_run git --staged --no-banner --redact --config .gitleaks.toml .
+gl_verdict $? "the staged changes"

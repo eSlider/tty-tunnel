@@ -32,8 +32,22 @@ jobs:
           dockerfile: Dockerfile
           recursive: true
 
+  # Hard gate: no secret ever reaches the images or the public history.
+  # Same config as the local hooks (.gitleaks.toml), pinned image.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans the full history, not just the tip
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git . --no-banner --redact --config .gitleaks.toml
+
   build:
-    needs: lint
+    needs: [lint, secrets]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
