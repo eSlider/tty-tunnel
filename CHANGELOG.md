@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0](https://github.com/eSlider/tty-tunnel/compare/v1.4.0...v1.5.0) (2026-10-03)
+
+
+### Features
+
+* **security:** gitleaks in git hooks and CI, plus a leaked example scrubbed ([7712d86](https://github.com/eSlider/tty-tunnel/commit/7712d866319b32b52c9d4bf16b8a5a49e6383ec6))
+
+
+### Bug Fixes
+
+* **ci:** make the gitleaks hooks shellcheck-clean on their own ([4643f45](https://github.com/eSlider/tty-tunnel/commit/4643f45e3b232df5cb9d8987b1365ba86f69e481))
+* **cli:** explain a stale local DNS cache instead of looking dead ([0be3a59](https://github.com/eSlider/tty-tunnel/commit/0be3a5957a16e331cfd7a983f20f66d2bc59ae94))
+* **make:** make pass show the table for the current tunnel target ([93b58f6](https://github.com/eSlider/tty-tunnel/commit/93b58f6e45d6a7d0dbc4e1c16b1d5a9468d6e46d))
+
 ## [1.4.0](https://github.com/eSlider/tty-tunnel/compare/v1.3.0...v1.4.0) (2026-09-22)
 
 
