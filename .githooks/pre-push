@@ -5,6 +5,7 @@
 set -u
 
 # shellcheck source=.githooks/lib-gitleaks.sh
+# shellcheck disable=SC1091
 . "$(dirname "$0")/lib-gitleaks.sh"
 
 if [ "${GITLEAKS_SKIP:-0}" = "1" ]; then
